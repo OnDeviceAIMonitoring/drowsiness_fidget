@@ -8,7 +8,7 @@ Signal Hub — 여러 감지기(Detector)를 통합 실행하는 오케스트레
 import cv2
 import time
 
-from detectors import DrowsinessDetector, FidgetDetector, Signal
+from detectors import DrowsinessDetector, FidgetDetector, OffTaskDetector, Signal
 
 # ─────────────────────────────────────────────────────────────
 #  감지기 등록 — 새 Detector를 여기에 추가하면 자동으로 동작합니다
@@ -16,7 +16,7 @@ from detectors import DrowsinessDetector, FidgetDetector, Signal
 DETECTORS = [
     DrowsinessDetector(),
     FidgetDetector(),
-    # ObjectDetector(),   # ← 향후 객체 탐지 추가 예시
+    OffTaskDetector(),
 ]
 
 # ─────────────────────────────────────────────────────────────
@@ -41,9 +41,8 @@ def on_signals(signals: list[Signal]) -> None:
 # 시그널 종류별 색상 / 라벨 매핑
 SIGNAL_STYLES = {
     "DROWSINESS": {"color": (0, 0, 200),   "label": "DROWSINESS"},     # 빨강
-    "LOW_FOCUS":  {"color": (0, 100, 220),  "label": "LOW_FOCUS"},   # 주황
-    # 새 시그널 추가 시 여기에 등록
-    # "OBJECT_DETECTED": {"color": (200, 120, 0), "label": "객체 감지"},
+    "LOW_FOCUS":  {"color": (0, 100, 220),  "label": "LOW_FOCUS"},      # 주황
+    "OFF_TASK":   {"color": (200, 0, 200),  "label": "OFF_TASK"},       # 보라
 }
 _DEFAULT_STYLE = {"color": (180, 180, 0), "label": "alarm"}            # 미등록 시그널 기본
 
