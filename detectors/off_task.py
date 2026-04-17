@@ -563,7 +563,7 @@ class OffTaskDetector(BaseDetector):
         }
 
     # ── process_frame ───────────────────────────────────
-    def process_frame(self, frame, now: float) -> list[Signal]:
+    def process_frame(self, frame, now: float, rgb=None) -> list[Signal]:
         signals: list[Signal] = []
 
         # dt 계산
@@ -577,7 +577,8 @@ class OffTaskDetector(BaseDetector):
         self.runtime["frame_index"] += 1
 
         h, w = frame.shape[:2]
-        rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+        if rgb is None:
+            rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
         rgb.flags.writeable = False
         mp_results = self.holistic.process(rgb)
         rgb.flags.writeable = True

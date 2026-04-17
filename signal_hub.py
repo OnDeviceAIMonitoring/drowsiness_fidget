@@ -8,7 +8,7 @@ Signal Hub — 여러 감지기(Detector)를 통합 실행하는 오케스트레
 import cv2
 import time
 
-from detectors import DrowsinessDetector, FidgetDetector, OffTaskDetector, Signal
+from detectors import DrowsinessDetector, FidgetDetector, OffTaskDetector, HeartDetector, Signal
 
 # ─────────────────────────────────────────────────────────────
 #  감지기 등록 — 새 Detector를 여기에 추가하면 자동으로 동작합니다
@@ -16,6 +16,7 @@ from detectors import DrowsinessDetector, FidgetDetector, OffTaskDetector, Signa
 DETECTORS = [
     DrowsinessDetector(),
     FidgetDetector(),
+    HeartDetector(),
     OffTaskDetector(),
 ]
 
@@ -40,9 +41,10 @@ def on_signals(signals: list[Signal]) -> None:
 # ─────────────────────────────────────────────────────────────
 # 시그널 종류별 색상 / 라벨 매핑
 SIGNAL_STYLES = {
-    "DROWSINESS": {"color": (0, 0, 200),   "label": "DROWSINESS"},     # 빨강
-    "LOW_FOCUS":  {"color": (0, 100, 220),  "label": "LOW_FOCUS"},      # 주황
-    "OFF_TASK":   {"color": (200, 0, 200),  "label": "OFF_TASK"},       # 보라
+    "DROWSINESS": {"color": (0, 0, 200),    "label": "DROWSINESS"},  # 빨강
+    "LOW_FOCUS":  {"color": (0, 100, 220),  "label": "LOW_FOCUS"},   # 주황
+    "HEART":      {"color": (180, 0, 180),  "label": "BIG HEART!"},  # 보라
+    "OFF_TASK":   {"color": (252, 180, 14),  "label": "OFF_TASK"},    # 파랑
 }
 _DEFAULT_STYLE = {"color": (180, 180, 0), "label": "alarm"}            # 미등록 시그널 기본
 
@@ -72,7 +74,7 @@ def draw_alert_bar(frame, signals: list[Signal]) -> None:
     text = " & ".join(labels)
 
     cv2.rectangle(frame, (0, h - 40), (w, h), bar_color, -1)
-    cv2.putText(frame, 'Warning: ' + text, (10, h - 12),
+    cv2.putText(frame, text, (10, h - 12),
                 cv2.FONT_HERSHEY_SIMPLEX, 0.65, (255, 255, 255), 2)
 
 
@@ -96,10 +98,13 @@ def main():
             fps = 1.0 / max(now - prev_time, 1e-6)
             prev_time = now
 
+            # ── BGR→RGB 변환 1회 (모든 감지기 공유) ──────────
+            rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+
             # ── 모든 감지기 실행 ──────────────────────────────
             all_signals: list[Signal] = []
             for det in DETECTORS:
-                sigs = det.process_frame(frame, now)
+                sigs = det.process_frame(frame, now, rgb)
                 all_signals.extend(sigs)
 
             # ── 시그널 콜백 ───────────────────────────────────
