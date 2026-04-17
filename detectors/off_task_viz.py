@@ -31,27 +31,43 @@ def draw_off_task_bar(frame, status, runtime):
          f"({status.get('phone_window_sec', 5.0):.0f}s)",
          (10, y0 + 26), (200, 200, 200), 0.42)
 
-    # ── 고개 방향(Yaw) 감지 바 ───────────────────────────
+    # ── 고개 방향(Yaw) 감지 바 / 캘리브레이션 진행 바 ────
     y1 = y0 + 34
-    yaw_hit = status.get("yaw_hit_count", 0)
-    yaw_thresh = status.get("yaw_hit_threshold", 3)
-    yaw_alert = status.get("yaw_alert", False)
-    yaw_ratio = min(yaw_hit / max(yaw_thresh, 1), 1.5)
-    yaw_bar_w = int(min(yaw_ratio / 1.5, 1.0) * 200)
-    yaw_color = (0, 255, 0) if not yaw_alert else (0, 0, 255)
-    cv2.rectangle(frame, (10, y1), (10 + yaw_bar_w, y1 + 12), yaw_color, -1)
-    cv2.rectangle(frame, (10, y1), (210, y1 + 12), (150, 150, 150), 1)
-    tx_yaw = int((1.0 / 1.5) * 200) + 10
-    cv2.line(frame, (tx_yaw, y1 - 2), (tx_yaw, y1 + 14), (0, 0, 255), 2)
-    _put(f"Yaw:{yaw_hit}/{yaw_thresh} "
-         f"({status.get('yaw_window_sec', 5.0):.0f}s)",
-         (10, y1 + 26), (200, 200, 200), 0.42)
+    calib_state = status.get("calibration_state", "off")
+    if calib_state not in ("done", "off"):
+        # 캘리브레이션 진행 중 — 프로그레스 바 표시
+        calib_elapsed = status.get("calibration_elapsed", 0.0)
+        calib_duration = max(status.get("calibration_duration", 5.0), 0.1)
+        calib_ratio = min(calib_elapsed / calib_duration, 1.0)
+        calib_bar_w = int(calib_ratio * 200)
+        calib_color = (255, 180, 0)  # 주황/노랑
+        cv2.rectangle(frame, (10, y1), (10 + calib_bar_w, y1 + 12),
+                      calib_color, -1)
+        cv2.rectangle(frame, (10, y1), (210, y1 + 12), (150, 150, 150), 1)
+        _put(f"Calibrating... {calib_elapsed:.1f}/{calib_duration:.0f}s",
+             (10, y1 + 26), (255, 220, 100), 0.42)
+    else:
+        # 캘리브레이션 완료 또는 비활성 — 기존 Yaw 바
+        yaw_hit = status.get("yaw_hit_count", 0)
+        yaw_thresh = status.get("yaw_hit_threshold", 3)
+        yaw_alert = status.get("yaw_alert", False)
+        yaw_ratio = min(yaw_hit / max(yaw_thresh, 1), 1.5)
+        yaw_bar_w = int(min(yaw_ratio / 1.5, 1.0) * 200)
+        yaw_color = (0, 255, 0) if not yaw_alert else (0, 0, 255)
+        cv2.rectangle(frame, (10, y1), (10 + yaw_bar_w, y1 + 12),
+                      yaw_color, -1)
+        cv2.rectangle(frame, (10, y1), (210, y1 + 12), (150, 150, 150), 1)
+        tx_yaw = int((1.0 / 1.5) * 200) + 10
+        cv2.line(frame, (tx_yaw, y1 - 2), (tx_yaw, y1 + 14), (0, 0, 255), 2)
+        _put(f"Yaw:{yaw_hit}/{yaw_thresh} "
+             f"({status.get('yaw_window_sec', 5.0):.0f}s)",
+             (10, y1 + 26), (200, 200, 200), 0.42)
 
-    # ── 최종 상태 ────────────────────────────────────────
-    y2 = y1 + 34
-    final = "CONCENTRATING" if status["is_concentrating"] else "DISTRACTED"
-    fc = (0, 255, 0) if status["is_concentrating"] else (0, 0, 255)
-    _put(f"[OffTask] {final}", (w-10, y2 + 42), fc, 0.5, 2)
+    # # ── 최종 상태 --> Signal로 따로 보내주는 것으로 대체 ──────────────────────
+    # y2 = y1 + 34
+    # final = "CONCENTRATING" if status["is_concentrating"] else "DISTRACTED"
+    # fc = (0, 255, 0) if status["is_concentrating"] else (0, 0, 255)
+    # _put(f"[OffTask] {final}", (w-110, y2 + 42), fc, 0.5, 2)
 
 
 def draw_off_task_ui(frame, status, cfg, viz_cfg):

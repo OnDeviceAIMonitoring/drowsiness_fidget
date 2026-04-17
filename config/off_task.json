@@ -54,9 +54,9 @@
     "yaw_max_degrees": 30.0,
     "yaw_out_seconds": 0.6,
     "phone_window_seconds": 5.0,
-    "phone_hit_threshold": 3,
+    "phone_hit_threshold": 5,
     "yaw_window_seconds": 5.0,
-    "yaw_hit_threshold": 3
+    "yaw_hit_threshold": 5
   },
   "tracking": {
     "max_face_speed_screen_per_second": 2.5,
@@ -69,20 +69,20 @@
   },
   "calibration": {
     "enabled": true,
-    "duration_seconds": 3.0,
+    "duration_seconds": 5.0,
     "min_samples": 20
   },
   "features": {
     "enable_phone_detection": true,
-    "enable_hands_on_desk_detection": true,
+    "enable_hands_on_desk_detection": false,
     "enable_smile_talking_detection": true,
     "enable_face_missing_detection": false
   },
   "visualization": {
     "draw_landmarks": false,
-    "draw_ui_panel": true,
-    "draw_tracker_history": true,
-    "draw_phone_boxes": true,
+    "draw_ui_panel": false,
+    "draw_tracker_history": false,
+    "draw_phone_boxes": false,
     "ui_panel_alpha": 0.42,
     "ui_panel_width_ratio": 0.5,
     "ui_panel_height_ratio": 0.65

@@ -13,7 +13,7 @@ Raspberry Pi + USB/CSI 카메라 환경에서 실행됩니다.
 | ✅ | 졸음 감지 | `drowsiness.py` | `DROWSINESS` | EAR + Face·Pose pitch |
 | ✅ | 하트 제스처 | `heart.py` | `HEART` | 양손 검지·엄지 형태 분석 |
 | ✅ | 딴짓 - 산만함 감지 | `fidget.py` | `LOW_FOCUS` | Motion energy burst 반복 |
-| ✅ | 딴짓 통합 - 객체 탐지/Tracking/고개 방향/웃으면서 대화 | `off_task` | `OFF_TASK` | (알고리즘 요약 참고) |
+| ✅ | 딴짓 통합 - 객체 탐지/Tracking/고개 방향/웃으면서 대화 | `off_task.py` | `OFF_TASK` | (알고리즘 요약 참고) |
 | 🔲 | (추가 예정) | — | — | — |
 
 ---
@@ -26,13 +26,13 @@ config/
   off_task.json            # Off-Task 감지기 설정 (모델, 임계값, 시각화 등)
 models/
   yolo26n.onnx             # YOLO ONNX 모델 (핸드폰/물체 감지용, 직접 배치)
-signal_hub.py            # 메인 실행 파일 — 모든 Detector 통합 오케스트레이터
 detectors/
+  shared.py              # SharedMediaPipe — Holistic 1회 추론 공유
   base.py                # Signal 데이터클래스 + BaseDetector 인터페이스 (공통)
   drowsiness.py          # 졸음 감지 (EAR + 고개 pitch 기반)
   fidget.py              # 산만함(반복 움직임) 감지
   heart.py               # 하트 제스처 감지
-  off_task.py            # Off-Task 감지 (Holistic + YOLO ONNX 복합)
+  off_task.py            # Off-Task 감지 (YOLO ONNX 복합)
   off_task_viz.py        # Off-Task 시각화 모듈
 ```
 
@@ -57,6 +57,23 @@ python signal_hub.py
 ```
 
 종료: `q` 키
+
+---
+
+## 아키텍처: SharedMediaPipe
+
+MediaPipe Holistic을 `SharedMediaPipe` 클래스로 1회만 추론하고 모든 Detector가 결과를 공유합니다.
+
+```
+[카메라] → BGR→RGB 1회 → SharedMediaPipe.process(rgb) → Holistic 추론 1회
+                              ↓ shared 객체 전달
+              ┌───────────────┼───────────────┬───────────────┐
+        DrowsinessDetector  FidgetDetector  HeartDetector  OffTaskDetector
+        (face + pose)       (pose)          (hands L/R)    (face + pose + hands + YOLO)
+```
+Holistic×1 = **1회 추론/프레임** (+ YOLO 비동기 1회)
+
+각 Detector의 `process_frame(frame, now, shared)` 에서 `shared.face_landmarks`, `shared.pose_landmarks`, `shared.left_hand_landmarks`, `shared.right_hand_landmarks` 로 접근합니다.
 
 ---
 
@@ -109,7 +126,7 @@ YOLO ONNX 모델은 `models/` 폴더에 배치해야 합니다.
 ## 새 Detector 추가 방법
 
 1. `detectors/` 에 `BaseDetector` 상속 클래스 파일 생성
-2. `process_frame(frame, now, rgb)`, `draw_hud(frame)`, `release()` 구현
+2. `process_frame(frame, now, shared)`, `draw_hud(frame)`, `release()` 구현
 3. `detectors/__init__.py` 에 import 및 `__all__` 에 추가
 4. `signal_hub.py` 의 `DETECTORS` 리스트에 인스턴스 추가
 5. `signal_hub.py` 의 `SIGNAL_STYLES` 에 시그널 이름·색상·라벨 등록

@@ -8,7 +8,7 @@ Signal Hub — 여러 감지기(Detector)를 통합 실행하는 오케스트레
 import cv2
 import time
 
-from detectors import DrowsinessDetector, FidgetDetector, OffTaskDetector, HeartDetector, Signal
+from detectors import DrowsinessDetector, FidgetDetector, OffTaskDetector, HeartDetector, Signal, SharedMediaPipe
 
 # ─────────────────────────────────────────────────────────────
 #  감지기 등록 — 새 Detector를 여기에 추가하면 자동으로 동작합니다
@@ -19,6 +19,8 @@ DETECTORS = [
     HeartDetector(),
     OffTaskDetector(),
 ]
+
+shared_mp = SharedMediaPipe()
 
 # ─────────────────────────────────────────────────────────────
 #  시그널 콜백 — 수신된 시그널을 처리하는 함수
@@ -100,11 +102,12 @@ def main():
 
             # ── BGR→RGB 변환 1회 (모든 감지기 공유) ──────────
             rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+            shared_mp.process(rgb)
 
             # ── 모든 감지기 실행 ──────────────────────────────
             all_signals: list[Signal] = []
             for det in DETECTORS:
-                sigs = det.process_frame(frame, now, rgb)
+                sigs = det.process_frame(frame, now, shared_mp)
                 all_signals.extend(sigs)
 
             # ── 시그널 콜백 ───────────────────────────────────
@@ -127,6 +130,7 @@ def main():
     finally:
         cap.release()
         cv2.destroyAllWindows()
+        shared_mp.release()
         for det in DETECTORS:
             det.release()
 

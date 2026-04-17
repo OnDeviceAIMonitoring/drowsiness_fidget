@@ -482,20 +482,7 @@ class OffTaskDetector(BaseDetector):
         return "off_task"
 
     def __init__(self, config_path=None):
-        import mediapipe as mp
-
         self.cfg = _load_config(config_path or _DEFAULT_CONFIG_PATH)
-        mp_cfg = self.cfg.get("mediapipe", {})
-
-        # MediaPipe Holistic
-        self._mp_holistic_mod = mp.solutions.holistic
-        self._mp_drawing = mp.solutions.drawing_utils
-        self._mp_drawing_styles = mp.solutions.drawing_styles
-        self.holistic = self._mp_holistic_mod.Holistic(
-            min_detection_confidence=mp_cfg.get("min_detection_confidence", 0.5),
-            min_tracking_confidence=mp_cfg.get("min_tracking_confidence", 0.5),
-            refine_face_landmarks=mp_cfg.get("refine_face_landmarks", False),
-        )
 
         # Phone detector (ONNX)
         features = self.cfg.get("features", {})
@@ -518,7 +505,7 @@ class OffTaskDetector(BaseDetector):
         # HUD 상태 (draw_hud에서 사용)
         self._status = None
         self._tracker_result = None
-        self._mp_results = None
+        self._shared = None  # SharedMediaPipe 참조 (draw_hud에서 사용)
 
     def _build_runtime_state(self):
         cfg = self.cfg
@@ -563,7 +550,7 @@ class OffTaskDetector(BaseDetector):
         }
 
     # ── process_frame ───────────────────────────────────
-    def process_frame(self, frame, now: float, rgb=None) -> list[Signal]:
+    def process_frame(self, frame, now: float, shared=None) -> list[Signal]:
         signals: list[Signal] = []
 
         # dt 계산
@@ -577,15 +564,10 @@ class OffTaskDetector(BaseDetector):
         self.runtime["frame_index"] += 1
 
         h, w = frame.shape[:2]
-        if rgb is None:
-            rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-        rgb.flags.writeable = False
-        mp_results = self.holistic.process(rgb)
-        rgb.flags.writeable = True
-        self._mp_results = mp_results
+        self._shared = shared
 
-        face_landmarks = mp_results.face_landmarks
-        pose_landmarks = mp_results.pose_landmarks
+        face_landmarks = shared.face_landmarks if shared else None
+        pose_landmarks = shared.pose_landmarks if shared else None
         thresholds = self.runtime["active_thresholds"]
         features = self.cfg.get("features", {})
         model_cfg = self.cfg.get("model", {})
@@ -601,8 +583,8 @@ class OffTaskDetector(BaseDetector):
         lower_region_thresh = float(tracking_cfg.get("object_bottom_ignore_threshold", 0.8))
         if phone_detected and requires_hand_contact:
             phone_detected = _is_object_held_by_hand(
-                phone_boxes, mp_results, pose_landmarks,
-                self._mp_holistic_mod, frame.shape,
+                phone_boxes, shared.results, pose_landmarks,
+                shared.mp_holistic, frame.shape,
                 max_distance_ratio=hand_contact_distance,
                 lower_region_threshold=lower_region_thresh)
 
@@ -662,7 +644,7 @@ class OffTaskDetector(BaseDetector):
 
         # ── 트래커 업데이트 ───────────────────────────────
         measurement = _extract_face_measurement(
-            face_landmarks, pose_landmarks, self._mp_holistic_mod)
+            face_landmarks, pose_landmarks, shared.mp_holistic)
         tracker_result = _update_face_tracker(self.runtime, measurement, dt, self.cfg)
         if tracker_result is not None:
             status["tracker_matched"] = tracker_result["matched"]
@@ -759,34 +741,42 @@ class OffTaskDetector(BaseDetector):
         status["status_yaw_out"] = status["yaw_alert"]
 
         # ── 손 가시성 ─────────────────────────────────────
-        min_hand_vis = float(
-            thresholds.get("min_pose_visibility_for_hand", 0.35))
-        has_hand = _has_any_visible_hand(
-            mp_results, pose_landmarks, self._mp_holistic_mod, min_hand_vis)
-        status["has_hand_visible"] = has_hand
+        if features.get("enable_hands_on_desk_detection", True):
+            min_hand_vis = float(
+                thresholds.get("min_pose_visibility_for_hand", 0.35))
+            has_hand = _has_any_visible_hand(
+                shared.results, pose_landmarks, shared.mp_holistic,
+                min_hand_vis)
+            status["has_hand_visible"] = has_hand
 
-        if not self.runtime["study_started"] and has_hand:
-            self.runtime["study_started"] = True
-        status["study_started"] = self.runtime["study_started"]
+            if not self.runtime["study_started"] and has_hand:
+                self.runtime["study_started"] = True
+            status["study_started"] = self.runtime["study_started"]
 
-        no_hand_frames = int(max(
-            1, thresholds.get("no_hand_seconds", 0.8) * self._fps))
-        if self.runtime["study_started"]:
-            if has_hand:
-                self.runtime["no_hand_counter"] = 0
+            no_hand_frames = int(max(
+                1, thresholds.get("no_hand_seconds", 0.8) * self._fps))
+            if self.runtime["study_started"]:
+                if has_hand:
+                    self.runtime["no_hand_counter"] = 0
+                else:
+                    self.runtime["no_hand_counter"] += 1
+                status["status_no_hands"] = (
+                    self.runtime["no_hand_counter"] >= no_hand_frames)
             else:
-                self.runtime["no_hand_counter"] += 1
-            status["status_no_hands"] = (
-                self.runtime["no_hand_counter"] >= no_hand_frames)
-        else:
-            status["status_no_hands"] = True
-
-        if pose_landmarks and features.get(
-                "enable_hands_on_desk_detection", True):
-            if not _check_hands_on_desk(
-                    pose_landmarks, self._mp_holistic_mod,
-                    thresholds.get("desk_y_threshold", 0.6)):
                 status["status_no_hands"] = True
+
+            if pose_landmarks:
+                if not _check_hands_on_desk(
+                        pose_landmarks, shared.mp_holistic,
+                        thresholds.get("desk_y_threshold", 0.6)):
+                    status["status_no_hands"] = True
+        else:
+            # 손 감지 비활성화 — 항상 study_started, no_hands=False
+            if not self.runtime["study_started"]:
+                self.runtime["study_started"] = True
+            status["study_started"] = True
+            status["has_hand_visible"] = True
+            status["status_no_hands"] = False
 
         # ── 트래커 히스토리 분석 ──────────────────────────
         hist_pts = [
@@ -805,11 +795,15 @@ class OffTaskDetector(BaseDetector):
         if calib["enabled"]:
             if calib["done"]:
                 status["calibration_state"] = "done"
+                status["calibration_elapsed"] = calib["duration_seconds"]
+                status["calibration_duration"] = calib["duration_seconds"]
             else:
                 elapsed = (max(0.0, time.perf_counter() - calib["start_ts"])
                            if calib["started"] else 0.0)
                 status["calibration_state"] = (
                     f"running {elapsed:.1f}/{calib['duration_seconds']:.1f}s")
+                status["calibration_elapsed"] = elapsed
+                status["calibration_duration"] = calib["duration_seconds"]
 
         # ── 트래커 히스토리 저장 (시각화용) ───────────────
         if (tracker_result is not None
@@ -919,10 +913,10 @@ class OffTaskDetector(BaseDetector):
         # 항상 표시: 좌측 하단 딴 짓 상태 바
         draw_off_task_bar(frame, self._status, self.runtime)
 
-        if viz_cfg.get("draw_landmarks", True) and self._mp_results is not None:
+        if viz_cfg.get("draw_landmarks", True) and self._shared is not None:
             draw_off_task_landmarks(
-                frame, self._mp_results, self._mp_holistic_mod,
-                self._mp_drawing, self._mp_drawing_styles)
+                frame, self._shared.results, self._shared.mp_holistic,
+                self._shared.mp_drawing, self._shared.mp_drawing_styles)
 
         if viz_cfg.get("draw_phone_boxes", True) and self._status.get("phone_boxes"):
             draw_off_task_phone_boxes(
@@ -938,6 +932,5 @@ class OffTaskDetector(BaseDetector):
 
     # ── 정리 ──────────────────────────────────────────────
     def release(self):
-        self.holistic.close()
         if self._executor is not None:
             self._executor.shutdown(wait=False)
